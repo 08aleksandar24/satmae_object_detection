@@ -14,6 +14,10 @@ from PIL import Image
 import rasterio
 from rasterio import logging
 
+import xml.etree.ElementTree as ET
+import torchvision.transforms as T
+from torchvision.transforms import functional as F
+from torch.utils.data import Dataset
 log = logging.getLogger()
 log.setLevel(logging.ERROR)
 
@@ -37,6 +41,130 @@ CATEGORIES = ["airport", "airport_hangar", "airport_terminal", "amusement_park",
               "stadium", "storage_tank", "surface_mine", "swimming_pool", "toll_booth",
               "tower", "tunnel_opening", "waste_disposal", "water_treatment_facility",
               "wind_farm", "zoo"]
+class DIORDataset(Dataset):
+    def __init__(self, root, split="trainval", transform=None):
+        self.root = root
+        self.split = split
+        self.transform = transform
+
+        self.image_dir = os.path.join(root, f"JPEGImages-{split}")
+        self.ann_dir = os.path.join(root, "Annotations", "Horizontal Bounding Boxes")
+
+        if not os.path.exists(self.image_dir):
+            raise FileNotFoundError(f"Image folder not found: {self.image_dir}")
+        if not os.path.exists(self.ann_dir):
+            raise FileNotFoundError(f"Annotation folder not found: {self.ann_dir}")
+
+        self.image_filenames = [f.split(".")[0] for f in os.listdir(self.image_dir) if f.endswith(".jpg")]
+        self.annotation_filenames = [f.split(".")[0] for f in os.listdir(self.ann_dir) if f.endswith(".xml")]
+
+        self.image_filenames = sorted(list(set(self.image_filenames) & set(self.annotation_filenames)))
+
+        # 🔹 Define class mapping (Ensure it matches your dataset)
+        self.CLASS_MAPPING = {
+            "airplane": 0, "airport": 1, "baseballfield": 2, "basketballcourt": 3,
+            "bridge": 4, "chimney": 5, "dam": 6, "Expressway-Service-area": 7,
+            "Expressway-toll-station": 8, "golffield": 9, "groundtrackfield": 10,
+            "harbor": 11, "overpass": 12, "ship": 13, "stadium": 14, "storagetank": 15,
+            "tenniscourt": 16, "trainstation": 17, "vehicle": 18, "windmill": 19
+        }
+
+    def __getitem__(self, idx):
+        image_id = self.image_filenames[idx]
+        img_path = os.path.join(self.image_dir, f"{image_id}.jpg")
+        xml_path = os.path.join(self.ann_dir, f"{image_id}.xml")
+
+        image = Image.open(img_path).convert("RGB")
+
+        target_data = self.parse_voc_xml(xml_path)
+        boxes = target_data["boxes"]
+        labels = target_data["labels"]
+
+        if self.transform is not None:
+            # Albumentations expects numpy image and Pascal VOC format
+            transformed = self.transform(
+                image=np.array(image),
+                bboxes=boxes,
+                class_labels=labels
+            )
+            image = transformed["image"]
+            boxes = torch.tensor(transformed["bboxes"], dtype=torch.float32)
+            labels = torch.tensor(transformed["class_labels"], dtype=torch.int64)
+        else:
+            # For Faster R-CNN — convert image and data manually
+            image = F.to_tensor(image)
+            boxes = torch.tensor(boxes, dtype=torch.float32)
+            labels = torch.tensor(labels, dtype=torch.int64)
+
+        # Filter out invalid boxes (zero width/height)
+        if boxes.shape[0] > 0:
+            widths = boxes[:, 2] - boxes[:, 0]
+            heights = boxes[:, 3] - boxes[:, 1]
+            keep = (widths > 0) & (heights > 0)
+            boxes = boxes[keep]
+            labels = labels[keep]
+        if self.transform is not None:
+            multi_hot = torch.zeros(21, dtype=torch.float32)
+            for label in labels:
+                multi_hot[label] = 1.0
+            target = {
+                "labels": multi_hot,
+                "image_id": torch.tensor([idx])
+            }
+
+        else:
+            target = {
+                "boxes": boxes,
+                "labels": labels,
+                "image_id": torch.tensor([idx])
+            }
+
+        return image, target
+
+    def parse_voc_xml(self, xml_path):
+        """Parses a Pascal VOC XML file and extracts bounding box & label information."""
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        boxes = []
+        labels = []
+
+        for obj in root.findall("object"):
+            bbox = obj.find("bndbox")
+            xmin = int(bbox.find("xmin").text)
+            ymin = int(bbox.find("ymin").text)
+            xmax = int(bbox.find("xmax").text)
+            ymax = int(bbox.find("ymax").text)
+            boxes.append([xmin, ymin, xmax, ymax])
+
+            # 🔹 Get label as a string and convert it to an integer index
+            label_str = obj.find("name").text
+            if label_str in self.CLASS_MAPPING:
+                labels.append(self.CLASS_MAPPING[label_str])
+            else:
+                raise ValueError(f"Unknown class label '{label_str}' in {xml_path}")
+
+        return {"boxes": boxes, "labels": labels}
+
+    def transform_image_and_boxes(self, image, boxes, orig_w, orig_h):
+        """Resizes image & bounding boxes while maintaining aspect ratio."""
+        # 🔹 Resize image
+        transformed_image = F.resize(image, (224, 224))  # Ensure consistent resizing
+        transformed_image = F.to_tensor(transformed_image)  # Convert to tensor
+
+        # 🔹 Rescale bounding boxes
+        scale_x = 224 / orig_w
+        scale_y = 224 / orig_h
+        transformed_boxes = torch.tensor(
+            [[x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y] for x1, y1, x2, y2 in boxes],
+            dtype=torch.float32
+        )
+
+        return transformed_image, transformed_boxes
+
+    def __len__(self):
+        return len(self.image_filenames)
+
+
 
 
 class SatelliteDataset(Dataset):
@@ -223,6 +351,8 @@ class CustomDatasetFromImagesTemporal(SatelliteDataset):
         self.dataset_root_path = os.path.dirname(csv_path)
 
         self.timestamp_arr = np.asarray(self.data_info.iloc[:, 2])
+        #print("DEBUG: self.image_arr =", self.image_arr[:10])  # Print first 10 elements
+
         self.name2index = dict(zip(
             [os.path.join(self.dataset_root_path, x) for x in self.image_arr],
             np.arange(self.data_len)
@@ -234,20 +364,23 @@ class CustomDatasetFromImagesTemporal(SatelliteDataset):
         std = [0.28774282336235046, 0.27541765570640564, 0.2764017581939697]
         self.normalization = transforms.Normalize(mean, std)
         self.totensor = transforms.ToTensor()
-        self.scale = transforms.Scale(224)
+        self.scale = transforms.Resize(224)
 
     def __getitem__(self, index):
         # Get image name from the pandas df
         single_image_name_1 = self.image_arr[index]
 
-        suffix = single_image_name_1[-15:]
-        prefix = single_image_name_1[:-15].rsplit('_', 1)
+        suffix = single_image_name_1[-5:]
+        prefix = single_image_name_1[:-5].rsplit('_', 1)
         regexp = '{}_*{}'.format(prefix[0], suffix)
         regexp = os.path.join(self.dataset_root_path, regexp)
         single_image_name_1 = os.path.join(self.dataset_root_path, single_image_name_1)
-        temporal_files = glob(regexp)
 
-        temporal_files.remove(single_image_name_1)
+        temporal_files = glob(regexp)
+        #print("DEBUG:",single_image_name_1 in temporal_files,single_image_name_1,temporal_files, suffix, prefix)
+
+        if single_image_name_1 in temporal_files:
+            temporal_files.remove(single_image_name_1)
         if temporal_files == []:
             single_image_name_2 = single_image_name_1
             single_image_name_3 = single_image_name_1
@@ -330,6 +463,8 @@ class CustomDatasetFromImagesTemporal(SatelliteDataset):
         return (imgs, ts, single_image_label)
 
     def parse_timestamp(self, name):
+        if name not in self.name2index or self.name2index[name] not in self.timestamp_arr:
+            return np.array([0,0,0])
         timestamp = self.timestamp_arr[self.name2index[name]]
         year = int(timestamp[:4])
         month = int(timestamp[5:7])
