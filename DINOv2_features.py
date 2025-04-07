@@ -84,7 +84,7 @@ class DINOv2(nn.Module):
          #   x = F.interpolate(x, size=(518, 518), mode='bilinear', align_corners=False)
         # Get current height/width (assuming square input)
         h, w = x.shape[-2], x.shape[-1]
-
+        #print(h,w)
         # Compute nearest lower multiples of 14
         new_h = (h // 14) * 14
         new_w = (w // 14) * 14
@@ -92,14 +92,29 @@ class DINOv2(nn.Module):
         # Only interpolate if the size is not already valid
         if new_h != h or new_w != w:
             x = F.interpolate(x, size=(new_h, new_w), mode='bilinear', align_corners=False)
-        
+        #print(x.shape[-2], x.shape[-1])
+        #print(self.model.get_intermediate_layers(x, (3, 5, 8, 11)))
         with torch.no_grad():
+            features = self.model.get_intermediate_layers(x, (3, 5, 8, 11))
+            out = {}
+            for i, feat in enumerate(features):
+                #tokens = feat[:, 1:]  # remove cls token
+                B, N, C = feat.shape
+                #print(B,N,C)
+                H = W = int(N ** 0.5)
+                #print(H,W)
+                feat_map = feat.permute(0, 2, 1).reshape(B, C, H, W)
+                out[str(i)] = feat_map  # e.g., out['0'], out['1'], ...
+        return out
+
+
+        """with torch.no_grad():
             out = self.model.forward_features(x)
             tokens = out['x_norm_patchtokens']  # (B, N, C)
             B, N, C = tokens.shape
             H = W = int(N ** 0.5)
             tokens = tokens.permute(0, 2, 1).reshape(B, C, H, W)  # (B, C, H, W)
-        return {"0": tokens}
+        return {"0": tokens}"""
     @property
     def out_channels(self):
         return self.embed_dim

@@ -342,14 +342,17 @@ def main(args):
         roi_pooler = torchvision.ops.MultiScaleRoIAlign(
             featmap_names=['0'], output_size=7, sampling_ratio=2
         )"""
-        
+        """anchor_generator = AnchorGenerator(
+            sizes=((2, 4, 8, 16, 32, 64, 128, 256),),
+            aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),)
+        )"""
         anchor_generator = AnchorGenerator(
-            sizes=((16,), (32,), (64,), (128,), (256,)),  # 5 feature maps
-            aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),) * 5
+            sizes=((16,), (32,), (64,), (128,)),  # 5 feature maps
+            aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),) * 4
         )
 
         roi_pooler = torchvision.ops.MultiScaleRoIAlign(
-            featmap_names=['7', '11', '15','19','23'],
+            featmap_names=['3', '5', '8','11'],
             output_size=7,
             sampling_ratio=2
         )
