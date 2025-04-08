@@ -254,8 +254,8 @@ def main(args):
 
         def process_target(t):
             return {
-                "boxes": torch.tensor(t["boxes"], dtype=torch.float32),
-                "labels": torch.tensor(t["labels"], dtype=torch.int64),
+                "boxes": t["boxes"].clone().detach().float(),
+                "labels": t["labels"].clone().detach().long(),
                 "image_id": t["image_id"]  # ✅ Preserve image_id
             }
 
@@ -326,7 +326,7 @@ def main(args):
     # Define the model
     # Load SatMAE as backbone
     if args.model == "vit_large_patch16":
-        backbone = vit_large_patch16_frcnn(pretrained=True)
+        backbone = vit_large_patch16_frcnn(args, pretrained=True)
         backbone.out_channels = 1024  # This should match your ViT embedding dimension
         
     elif args.model.split("_")[0] == "DINOv2":
@@ -401,12 +401,13 @@ def main(args):
         raise ValueError(f"Unknown detection_head: {args.detection_head}")
 
 
-    if args.finetune and not args.eval:
+    if False and args.finetune and not args.eval:
         checkpoint = torch.load(args.finetune, map_location='cpu')
         print("Load pre-trained checkpoint from: %s" % args.finetune)
-
+        print(checkpoint.keys())
         # Get raw MAE encoder weights
-        raw_checkpoint_model = checkpoint['model']
+        #raw_checkpoint_model = checkpoint['model']
+        raw_checkpoint_model = checkpoint
         print("Raw checkpoint keys:", raw_checkpoint_model.keys())
 
         # Add "backbone." prefix to encoder keys

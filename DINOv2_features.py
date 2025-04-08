@@ -95,9 +95,10 @@ class DINOv2(nn.Module):
         #print(x.shape[-2], x.shape[-1])
         #print(self.model.get_intermediate_layers(x, (3, 5, 8, 11)))
         with torch.no_grad():
-            features = self.model.get_intermediate_layers(x, (3, 5, 8, 11))
+            layers = (3, 5, 8, 11)
+            features = self.model.get_intermediate_layers(x, layers)
             out = {}
-            for i, feat in enumerate(features):
+            for i, feat in zip(layers, features):
                 #tokens = feat[:, 1:]  # remove cls token
                 B, N, C = feat.shape
                 #print(B,N,C)

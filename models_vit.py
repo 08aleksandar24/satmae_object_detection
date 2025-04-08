@@ -31,7 +31,7 @@ class ViTBackbone(VisionTransformer):
         features = {}
         for i, blk in enumerate(self.blocks):
             x = blk(x)
-            if i in [7, 11, 15, 19, 23]:
+            if i in [3, 5, 8, 11]:
                 tokens = x[:, 1:, :]  # remove cls
                 H = W = int(tokens.shape[1] ** 0.5)
                 feat = tokens.permute(0, 2, 1).reshape(B, -1, H, W)  # (B, C, H, W)
@@ -58,22 +58,23 @@ class ViTBackbone(VisionTransformer):
 
         return {"0": x}  # ✅ Return as dict for FasterRCNN"""
 
-def vit_large_patch16_frcnn(pretrained=True):
+def vit_large_patch16_frcnn(args, pretrained=True):
     model = ViTBackbone(
         patch_size=16, embed_dim=1024, depth=24, num_heads=16, 
         mlp_ratio=4, qkv_bias=True, norm_layer=partial(torch.nn.LayerNorm, eps=1e-6)
     )
     
     if pretrained:
-        checkpoint_path = "/home/aleksandar/pre_train/last_vit_l_rvsa_ss_is_rd_pretrn_model_encoder.pth"  # Ensure this is correct
+        checkpoint_path = args.finetune
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         print("[DEBUG X1]")
+        
+        #checkpoint = checkpoint['model']
         print("Checkpoint keys:", checkpoint.keys())  # Debugging step
-
         # Interpolate position embeddings
-        if "pos_embed" in checkpoint["state_dict"]:
+        if "pos_embed" in checkpoint["model"]:
             print("[DEBUG X2]", "pos_embed")
-            old_pos_embed = checkpoint["state_dict"]["pos_embed"]  # Shape: [1, 784, 1024]
+            old_pos_embed = checkpoint["model"]["pos_embed"]  # Shape: [1, 784, 1024]
             new_pos_embed = model.pos_embed  # Expected shape: [1, 197, 1024]
 
             num_tokens_old = old_pos_embed.shape[1]  # 784 in checkpoint
@@ -98,10 +99,10 @@ def vit_large_patch16_frcnn(pretrained=True):
                 new_grid_embed = new_grid_embed.permute(0, 2, 3, 1).reshape(1, gs_new * gs_new, -1)
 
                 # Reconstruct pos_embed with CLS token
-                checkpoint["state_dict"]["pos_embed"] = torch.cat([cls_token_embed, new_grid_embed], dim=1)
+                checkpoint["model"]["pos_embed"] = torch.cat([cls_token_embed, new_grid_embed], dim=1)
 
         # Load weights
-        model.load_state_dict(checkpoint["state_dict"], strict=False)
+        model.load_state_dict(checkpoint["model"], strict=False)
 
     return model
 
