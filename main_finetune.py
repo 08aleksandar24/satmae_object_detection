@@ -204,8 +204,8 @@ def main(args):
     np.random.seed(seed)
 
     cudnn.benchmark = True
-    mean= [123.675/800, 116.28/800, 103.53/800]#[0.485, 0.456, 0.406]#
-    std= [58.395/800, 57.12/800, 57.375/800]#[0.229, 0.224, 0.225]#
+    mean= [0.38913488, 0.40021667, 0.36280048]
+    std= [0.15591773, 0.14450581, 0.14117402]
     custom_transform = GeneralizedRCNNTransform(
         min_size=(224,),
         max_size=224,
@@ -326,7 +326,7 @@ def main(args):
     # Define the model
     # Load SatMAE as backbone
     if args.model == "vit_large_patch16":
-        backbone = vit_large_patch16_frcnn(args, pretrained=True)
+        backbone = vit_large_patch16_frcnn(pretrained=True)
         backbone.out_channels = 1024  # This should match your ViT embedding dimension
         
     elif args.model.split("_")[0] == "DINOv2":
@@ -342,11 +342,11 @@ def main(args):
         roi_pooler = torchvision.ops.MultiScaleRoIAlign(
             featmap_names=['0'], output_size=7, sampling_ratio=2
         )"""
-        """anchor_generator = AnchorGenerator(
-            sizes=((2, 4, 8, 16, 32, 64, 128, 256),),
-            aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),)
-        )"""
         anchor_generator = AnchorGenerator(
+            sizes=((2, 4, 8, 16, 32, 64, 128, 256),),
+            aspect_ratios=((0.5, 1.0, 2.0),)
+        )
+        """anchor_generator = AnchorGenerator(
             sizes=((16,), (32,), (64,), (128,)),  # 5 feature maps
             aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),) * 4
         )
@@ -355,7 +355,7 @@ def main(args):
             featmap_names=['3', '5', '8','11'],
             output_size=7,
             sampling_ratio=2
-        )
+        )"""
         """roi_pooler = torchvision.ops.MultiScaleRoIAlign(
             featmap_names=['0', '1', '2', '3'],  # must match FPN outputs
             output_size=7,
@@ -369,9 +369,9 @@ def main(args):
             rpn_anchor_generator=anchor_generator,
             min_size=224,
             transform=custom_transform,
-            image_mean=mean,
-            image_std=std,
-            box_roi_pool=roi_pooler,
+            #image_mean=mean,
+            #image_std=std,
+            #box_roi_pool=roi_pooler,
             
         )
         """rpn_pre_nms_top_n_train = 2000,
@@ -505,7 +505,7 @@ def main(args):
         return param_groups
 
     # Use in optimizer
-    optimizer = torch.optim.AdamW(get_vit_param_groups(model_without_ddp, args.lr, weight_decay=0.05))
+    #optimizer = torch.optim.AdamW(get_vit_param_groups(model_without_ddp, args.lr, weight_decay=0.05))
 
     # build optimizer with layer-wise lr decay (lrd)
     param_groups = model_without_ddp.parameters()

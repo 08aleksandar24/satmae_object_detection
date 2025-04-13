@@ -13,32 +13,13 @@ from timm.models.vision_transformer import VisionTransformer
 import torch.nn.functional as F
 import timm.models.vision_transformer
 from util.pos_embed import get_2d_sincos_pos_embed
-
+from util.pos_embed import interpolate_pos_embed
 class ViTBackbone(VisionTransformer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.out_channels = 1024  # Important for FasterRCNN to work
-    
+
     def forward(self, x):
-        B = x.shape[0]
-        x = self.patch_embed(x)
-        cls_token = self.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_token, x), dim=1)
-        x = x + self.pos_embed
-        x = self.pos_drop(x)
-
-        # Store outputs at different depths
-        features = {}
-        for i, blk in enumerate(self.blocks):
-            x = blk(x)
-            if i in [3, 5, 8, 11]:
-                tokens = x[:, 1:, :]  # remove cls
-                H = W = int(tokens.shape[1] ** 0.5)
-                feat = tokens.permute(0, 2, 1).reshape(B, -1, H, W)  # (B, C, H, W)
-                features[str(i)] = feat
-
-        return features
-    """def forward(self, x):
         B = x.shape[0]
         x = self.patch_embed(x)  # (B, C, H, W) → Flattened
         cls_token = self.cls_token.expand(B, -1, -1)
@@ -56,25 +37,26 @@ class ViTBackbone(VisionTransformer):
         h = w = int(x.shape[1] ** 0.5)
         x = x.permute(0, 2, 1).contiguous().view(B, -1, h, w)  # → (B, 1024, 14, 14)
 
-        return {"0": x}  # ✅ Return as dict for FasterRCNN"""
+        return {"0": x}  # ✅ Return as dict for FasterRCNN
 
-def vit_large_patch16_frcnn(args, pretrained=True):
+def vit_large_patch16_frcnn(pretrained=True):
     model = ViTBackbone(
+        img_size=224,
         patch_size=16, embed_dim=1024, depth=24, num_heads=16, 
         mlp_ratio=4, qkv_bias=True, norm_layer=partial(torch.nn.LayerNorm, eps=1e-6)
     )
     
     if pretrained:
-        checkpoint_path = args.finetune
+        checkpoint_path = "/home/aleksandar/pre_train/last_vit_l_rvsa_ss_is_rd_pretrn_model_encoder.pth" 
+        #checkpoint_path = "/home/aleksandar/satmaepretrain/fmow_pretrain.pth" 
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         print("[DEBUG X1]")
-        
-        #checkpoint = checkpoint['model']
         print("Checkpoint keys:", checkpoint.keys())  # Debugging step
+
         # Interpolate position embeddings
-        if "pos_embed" in checkpoint["model"]:
+        if "pos_embed" in checkpoint["state_dict"]:
             print("[DEBUG X2]", "pos_embed")
-            old_pos_embed = checkpoint["model"]["pos_embed"]  # Shape: [1, 784, 1024]
+            old_pos_embed = checkpoint["state_dict"]["pos_embed"]  # Shape: [1, 784, 1024]
             new_pos_embed = model.pos_embed  # Expected shape: [1, 197, 1024]
 
             num_tokens_old = old_pos_embed.shape[1]  # 784 in checkpoint
@@ -99,10 +81,10 @@ def vit_large_patch16_frcnn(args, pretrained=True):
                 new_grid_embed = new_grid_embed.permute(0, 2, 3, 1).reshape(1, gs_new * gs_new, -1)
 
                 # Reconstruct pos_embed with CLS token
-                checkpoint["model"]["pos_embed"] = torch.cat([cls_token_embed, new_grid_embed], dim=1)
+                checkpoint["state_dict"]["pos_embed"] = torch.cat([cls_token_embed, new_grid_embed], dim=1)
 
         # Load weights
-        model.load_state_dict(checkpoint["model"], strict=False)
+        model.load_state_dict(checkpoint["state_dict"], strict=False)
 
     return model
 

@@ -171,18 +171,7 @@ def evaluate_frcnn(data_loader, model, device, class_names=None):
     else:
         dist.barrier()  # Wait for rank 0
         coco_gt_path = os.path.join(tempfile.gettempdir(), "coco_gt.json")
-    if len(coco_predictions) == 0:
-        print("[❗] No predictions made — coco_predictions is empty.")
-        return {
-            "loss_classifier": 0.0,
-            "loss_box_reg": 0.0,
-            "loss_objectness": 0.0,
-            "loss_rpn_box_reg": 0.0,
-            "mAP_50": 0.0,
-            "mAP_50_95": 0.0,
-            "per_class_ap": {}
-        }
-    coco_gt = COCO(coco_gt_path)
+
     coco_gt = COCO(coco_gt_path)
     coco_dt = coco_gt.loadRes(coco_predictions)
 
@@ -283,8 +272,6 @@ def create_coco_json_from_dataset(dataset, save_dir="/tmp", json_name="coco_gt.j
     os.replace(temp_path, save_path) 
     print(f"[✓] Saved COCO GT to {save_path}")
     return save_path
-
-
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,

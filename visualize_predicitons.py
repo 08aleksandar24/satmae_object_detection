@@ -15,13 +15,14 @@ from PIL import ImageFont
 import matplotlib.font_manager as fm
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import numpy as np
 font_path = fm.findfont(fm.FontProperties(family='DejaVu Sans'))
 font = ImageFont.truetype(font_path, size=16)
 
 # 🔧 Settings
 NUM_SAMPLES = 10
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CHECKPOINT_PATH = "/home/aleksandar/satmaeoutputdinofeats/checkpoint-50.pth"
+CHECKPOINT_PATH = "/home/aleksandar/satmaeoutputdinonew2/checkpoint-127.pth"
 DATASET_ROOT = "/storage/local/ssd/dior"
 SAVE_DIR = "/home/aleksandar/visuals/satmaedinofeats"
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -32,7 +33,10 @@ DIOR_CLASSES = [
     "groundtrackfield", "harbor", "overpass", "ship", "stadium",
     "storagetank", "tenniscourt", "trainstation", "vehicle", "windmill"
 ]
-
+SEED = 42
+random.seed(SEED)
+torch.manual_seed(SEED)
+np.random.seed(SEED)
 def interpolate_pos_embed(model, checkpoint_model):
     if 'pos_embed' in checkpoint_model:
         pos_embed_checkpoint = checkpoint_model['pos_embed']
@@ -64,7 +68,7 @@ def load_frcnn_model(checkpoint_path, num_classes, model_name):
         backbone.out_channels = 1024
 
     anchor_generator = AnchorGenerator(
-        sizes=((2, 4, 8, 16, 32, 64, 128, 256),),  # Multiple scales
+        sizes=((1, 2, 4, 8, 16, 32, 64, 128, 256),),
         aspect_ratios=((0.25, 0.5, 1.0, 2.0, 4.0),)
     )
     image_mean=[0.485, 0.456, 0.406]
@@ -85,7 +89,7 @@ def load_frcnn_model(checkpoint_path, num_classes, model_name):
         backbone,
         num_classes=num_classes,
         rpn_anchor_generator=anchor_generator,
-        transform=cropping_transform,
+        transform=transform,
         min_size=224
     )
     # ✅ Load your checkpoint (which already has trained head)
